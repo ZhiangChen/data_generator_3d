@@ -2,23 +2,6 @@
 
 Generating high-quality synthetic datasets for 3D instance segmentation using Kubric.
 
-Mesh scene:  
-<img src="./docs/scene.png" alt="mesh" width="400"/>
-
-RGB image:  
-<img src="./docs/rgb.png" alt="rgb" width="400"/>
-
-Depth image:  
-<img src="./docs/depth.png" alt="depth" width="400"/>
-
-Segmentation:  
-<img src="./docs/seg.png" alt="seg" width="400"/>
-
-
-Pointcloud:  
-<img src="./docs/pointcloud.png" alt="pointcloud" width="400"/>
-
-
 ## Installation
 1. Kubric  
 Install Kubric using docker (https://github.com/google-research/kubric)
@@ -62,3 +45,26 @@ docker run --rm --interactive \
 python3 data_generator_3d/mesh2pointcloud.py
 ```
 
+## Features
+Mesh scene:  
+<img src="./docs/scene.png" alt="mesh" width="400"/>
+
+RGB image:  
+<img src="./docs/rgb.png" alt="rgb" width="400"/>
+
+Depth image:  
+<img src="./docs/depth.png" alt="depth" width="400"/>
+
+Segmentation:  
+<img src="./docs/seg.png" alt="seg" width="400"/>
+
+
+Pointcloud:  
+<img src="./docs/pointcloud.png" alt="pointcloud" width="400"/>
+
+    
+Rendering multiple camera photos from a lawnmower sweep pattern to simulate UAV imagery. Users can adjust camera parameters:
+- flying height
+- front overlap
+- side overlap
+- tilting angle

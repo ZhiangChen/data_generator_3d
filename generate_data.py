@@ -9,14 +9,15 @@ logging.basicConfig(level="INFO")  # < CRITICAL, ERROR, WARNING, INFO, DEBUG
 
 image_size = 512  # Image size in pixels (width and height)
 simulation_time = 5  # Simulation time in seconds
-floor_size = 15  # Size of the floor in meters
+floor_size = 150  # Size of the floor in meters
 aoi_size = 10  # Area of interest size in meters
 friction = 1.0  # Friction coefficient
 restitution = 0.01  # Restitution coefficient
-camera_height = 15  # Camera height in meters
+camera_height = 5  # Camera height in meters
 obj_initi_height = 2.0  # Initial object height in meters
-basic_objects = 5
-shapenet_objects = 5 
+basic_objects = 30 # Number of basic objects
+shapenet_objects = 1 # Number of shapenet objects
+camera_tilting = 10 # Camera tilting angle in degrees
 
 
 def generate_basic_objects(scene, num_objects=10):
@@ -90,7 +91,7 @@ def generate_shapenet_objects(scene, num_objects=10):
         random_position = rng.uniform(-aoi_size, aoi_size, size=2)
         random_position = np.append(random_position, obj_initi_height)
         # make object flat on X/Y and not penetrate floor
-        obj.quaternion = kb.Quaternion(axis=[1, 0, 0], degrees=90)
+        obj.quaternion = kb.Quaternion(axis=[1, 0, 0], degrees=0)
         obj.position = random_position
 
         # set physics properties
@@ -105,14 +106,16 @@ def generate_shapenet_objects(scene, num_objects=10):
         scene.add(obj)
 
 
-def render_scene_from_multiple_views(scene, renderer, camera_positions):
+def render_scene_from_multiple_views(scene, renderer, camera_poses):
     """Render the scene from different camera perspectives."""
     cameras = dict()
-    for idx, cam_pos in enumerate(camera_positions):
+    for idx, cam_pos in enumerate(camera_poses):
+        cam_position = cam_pos[:3]
+        cam_tilting = cam_pos[3]
         # Set camera position for this view
-        scene.camera.position = cam_pos
+        scene.camera.position = cam_position
         # Set camera orientation
-        scene.camera.quaternion = kb.Quaternion(axis=[0, 0, 1], degrees=0)  # Camera orientation
+        scene.camera.quaternion = kb.Quaternion(axis=[1, 0, 0], degrees=cam_tilting)
         
         # Render the scene for this camera position
         frames_dict = renderer.render()
@@ -156,14 +159,44 @@ def render_scene_from_multiple_views(scene, renderer, camera_positions):
 
         image_key = f"{idx}.png"
         cameras[image_key] = camera
-        
-        
 
     # Save the camera parameters as npy
     np.save("output/reconstructions/camera_poses.npy", cameras)
 
-def generate_camera_poses():
-    pass
+def generate_camera_poses(fov, tilting, front_overlap, side_overlap):
+    """
+    Generate camera poses for a given field of view (fov) and tilting angle.
+
+    Args:
+        fov (float): Field of view in radians.
+        tilting (float): Tilting angle in degrees.
+        front_overlap (float): Front overlap ratio.
+        side_overlap (float): Side overlap ratio.
+    """
+    short_distance = camera_height / np.cos(np.radians(tilting))
+    swath = short_distance * np.tan(fov / 2) * 2
+    forward_coverage = camera_height * (np.tan(np.radians(tilting)+fov) - np.tan(np.radians(tilting)))
+    
+    side_step_length = swath * (1 - side_overlap)
+    front_step_length = forward_coverage * (1 - front_overlap)
+
+    # Generate camera positions in a grid pattern with side and front overlap within the area of interest (aoi)
+    side_steps = int(np.ceil(2 * aoi_size / side_step_length)) + 2
+    front_steps = int(np.ceil(2 * aoi_size / front_step_length)) + 2
+
+    print(f"side_steps: {side_steps}, front_steps: {front_steps}")
+    print(f"side_step_length: {side_step_length}, front_step_length: {front_step_length}")
+    print(f"swath: {swath}, forward_coverage: {forward_coverage}")
+
+    camera_poses = []
+    for i in range(side_steps):
+        for j in range(front_steps):
+            x = -aoi_size - side_step_length + i * side_step_length
+            y = -aoi_size - front_step_length + j * front_step_length
+            camera_poses.append((x, y, camera_height, tilting))
+        tilting = -tilting
+    
+    return camera_poses
 
 if __name__ == "__main__":
     # --- Create scene and attach a renderer and simulator
@@ -181,6 +214,10 @@ if __name__ == "__main__":
     )
     floor.friction = friction
     floor.restitution = restitution  # Low restitution
+
+    floor_color = kb.Color(0.2, 0.2, 0.2)  # Define the color (e.g., green)
+    floor.material = kb.PrincipledBSDFMaterial(color=floor_color)
+    
     scene += floor
 
     # --- Add the sun light
@@ -199,7 +236,7 @@ if __name__ == "__main__":
         name="camera", 
         position=(3, -1, camera_height), 
         look_at=(0, 0, 1),
-        focal_length=35,
+        focal_length=30,
     )
 
 
@@ -218,5 +255,12 @@ if __name__ == "__main__":
     os.makedirs("output", exist_ok=True)
     renderer.save_state("output/semantic_SfM.blend")
 
-    render_scene_from_multiple_views(scene, renderer, camera_positions=[(1, 1, camera_height), (0, 0, camera_height)])
+    fov = scene.camera.field_of_view
+
+    camera_poses = generate_camera_poses(fov, tilting=camera_tilting, front_overlap=0.85, side_overlap=0.65)
+
+    # print out the generated camera poses number
+    logging.info(f"Generated {len(camera_poses)} camera poses")
+
+    render_scene_from_multiple_views(scene, renderer, camera_poses)
 
