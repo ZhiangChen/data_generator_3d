@@ -15,6 +15,8 @@ friction = 1.0  # Friction coefficient
 restitution = 0.01  # Restitution coefficient
 camera_height = 15  # Camera height in meters
 obj_initi_height = 2.0  # Initial object height in meters
+basic_objects = 5
+shapenet_objects = 5 
 
 
 def generate_basic_objects(scene, num_objects=10):
@@ -43,6 +45,7 @@ def generate_basic_objects(scene, num_objects=10):
         # simulation_filename has the file of object.urdf in the same directory of asset_file_path
         simulation_filename = os.path.join(os.path.dirname(asset_file_path), "object.urdf")
 
+
         # Create the object using FileBasedObject
         obj = kb.FileBasedObject(
             asset_id=os.path.basename(asset_file_path),
@@ -57,6 +60,8 @@ def generate_basic_objects(scene, num_objects=10):
         # Set the object's friction and restitution
         obj.friction = friction
         obj.restitution = restitution
+
+        obj.cast_shadows = False
 
         obj.static = False
 
@@ -92,10 +97,73 @@ def generate_shapenet_objects(scene, num_objects=10):
         obj.friction = friction
         obj.restitution = restitution
 
+        obj.cast_shadows = False
+
         # set random scale 
         obj.scale = rng.uniform(1., 5.0)
 
         scene.add(obj)
+
+
+def render_scene_from_multiple_views(scene, renderer, camera_positions):
+    """Render the scene from different camera perspectives."""
+    cameras = dict()
+    for idx, cam_pos in enumerate(camera_positions):
+        # Set camera position for this view
+        scene.camera.position = cam_pos
+        # Set camera orientation
+        scene.camera.quaternion = kb.Quaternion(axis=[0, 0, 1], degrees=0)  # Camera orientation
+        
+        # Render the scene for this camera position
+        frames_dict = renderer.render()
+
+        # Create output directories if it doesn't exist
+        os.makedirs("output/photos", exist_ok=True)
+        os.makedirs("output/reconstructions", exist_ok=True)
+        os.makedirs("output/associations/depth", exist_ok=True)
+        os.makedirs("output/segmentations_gt", exist_ok=True)
+        
+        # Save the outputs for this camera position
+        output_filenames = {
+            'rgba': f"output/photos/{idx}.png",
+            'depth': f"output/associations/depth/{idx}.png",
+            'segmentation': f"output/segmentations_gt/{idx}.png",
+        }
+
+        kb.write_png(frames_dict['rgba'][0], output_filenames['rgba'])
+        kb.write_palette_png(frames_dict['segmentation'][0], output_filenames['segmentation'])
+        depth_scale = kb.write_scaled_png(frames_dict['depth'][0], output_filenames['depth'])
+        # save the depth without scaling as npy file
+        np.save(f"output/associations/depth/{idx}.npy", frames_dict['depth'][0])
+        logging.info(f"View {idx}: Saved RGBA, depth, and segmentation with depth scale: {depth_scale}")
+        
+        # Save camera intrinsics and extrinsics
+        camera_intrinsics = scene.camera.intrinsics.copy()
+        camera_position = scene.camera.position.copy()
+        camera_rotation_matrix = scene.camera.rotation_matrix.copy()
+        # get camera transformation matrix from camera position and rotation matrix
+        camera_transformation_matrix = np.eye(4)
+        camera_transformation_matrix[:3, :3] = camera_rotation_matrix
+        camera_transformation_matrix[:3, 3] = camera_position
+        camera_width = image_size
+        camera_height = image_size
+
+        camera = dict()
+        camera['intrinsics'] = camera_intrinsics
+        camera['extrinsics'] = camera_transformation_matrix
+        camera['width'] = camera_width
+        camera['height'] = camera_height
+
+        image_key = f"{idx}.png"
+        cameras[image_key] = camera
+        
+        
+
+    # Save the camera parameters as npy
+    np.save("output/reconstructions/camera_poses.npy", cameras)
+
+def generate_camera_poses():
+    pass
 
 if __name__ == "__main__":
     # --- Create scene and attach a renderer and simulator
@@ -120,21 +188,26 @@ if __name__ == "__main__":
         name="sun_light",
         position=(0, 0, 10),       # High elevation along the Z-axis
         look_at=(0, 0, 0),         # Pointing towards the center of the scene
-        intensity=1.5,             # Adjust intensity as needed
-        shadow_softness=0.5,       # Soften shadows
+        intensity=2.0,             # Adjust intensity as needed
+        shadow_softness=2.0,       # Soften shadows
     )
     scene += sun_light
 
+
     # Camera setup
     scene.camera = kb.PerspectiveCamera(
-        name="camera", position=(3, -1, camera_height), look_at=(0, 0, 1)
+        name="camera", 
+        position=(3, -1, camera_height), 
+        look_at=(0, 0, 1),
+        focal_length=35,
     )
 
+
     # Generate basic objects
-    generate_basic_objects(scene, num_objects=10)
+    generate_basic_objects(scene, num_objects=basic_objects)
 
     # Generate shapenet objects
-    generate_shapenet_objects(scene, num_objects=10)
+    generate_shapenet_objects(scene, num_objects=shapenet_objects)
 
     # --- Run the simulation
     simulator.run()
@@ -142,33 +215,5 @@ if __name__ == "__main__":
     # --- Set the scene to render only the last frame
     scene.frame_start = scene.frame_end  # Render only the last frame
 
-    # --- Render the last frame
-    os.makedirs("output", exist_ok=True)
-    renderer.save_state("output/semantic_SfM.blend")
-    frames_dict = renderer.render()
-
-    # Since only one frame is rendered, it's at index 0
-    last_frame_data = {}
-    for output_type, data_array in frames_dict.items():
-        last_frame_data[output_type] = data_array[0]  # First (and only) frame
-
-    # --- Save the outputs
-    output_filenames = {
-        'rgba': 'output/last_frame_rgba.png',
-        'depth': 'output/last_frame_depth.png',
-        'segmentation': 'output/last_frame_segmentation.png',
-    }
-
-    kb.write_png(last_frame_data['rgba'], output_filenames['rgba'])
-    kb.write_palette_png(
-        last_frame_data['segmentation'], output_filenames['segmentation']
-    )
-    depth_scale = kb.write_scaled_png(
-        last_frame_data['depth'], output_filenames['depth']
-    )
-    logging.info(f"Last frame depth scale: {depth_scale}")
-
-    # save depth image without scale as numpy array
-    np.save('output/last_frame_depth.npy', last_frame_data['depth'])
-
+    render_scene_from_multiple_views(scene, renderer, camera_positions=[(1, 1, camera_height), (0, 0, camera_height)])
 
