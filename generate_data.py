@@ -215,5 +215,8 @@ if __name__ == "__main__":
     # --- Set the scene to render only the last frame
     scene.frame_start = scene.frame_end  # Render only the last frame
 
+    os.makedirs("output", exist_ok=True)
+    renderer.save_state("output/semantic_SfM.blend")
+
     render_scene_from_multiple_views(scene, renderer, camera_positions=[(1, 1, camera_height), (0, 0, camera_height)])
 
