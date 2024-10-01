@@ -7,16 +7,19 @@ from kubric.simulator.pybullet import PyBullet as KubricSimulator
 
 logging.basicConfig(level="INFO")  # < CRITICAL, ERROR, WARNING, INFO, DEBUG
 
+
 image_size = 512  # Image size in pixels (width and height)
-simulation_time = 5  # Simulation time in seconds
-floor_size = 150  # Size of the floor in meters
-aoi_size = 10  # Area of interest size in meters
+simulation_time = 8  # Simulation time in seconds
 friction = 1.0  # Friction coefficient
 restitution = 0.01  # Restitution coefficient
-camera_height = 5  # Camera height in meters
-obj_initi_height = 2.0  # Initial object height in meters
-basic_objects = 30 # Number of basic objects
-shapenet_objects = 1 # Number of shapenet objects
+
+basic_objects = 100 # Number of basic objects
+shapenet_objects = 100 # Number of shapenet objects
+
+floor_size = 400  # Size of the floor in meters
+aoi_size = 100  # Area of interest size in meters
+camera_height = 30  # Camera height in meters
+obj_initi_height = 12.0  # Initial object height in meters
 camera_tilting = 10 # Camera tilting angle in degrees
 
 
@@ -54,7 +57,7 @@ def generate_basic_objects(scene, num_objects=10):
             simulation_filename=simulation_filename,  # Set to None to use default collision shape
             position=random_position,
             quaternion=kb.random_rotation(rng=rng),
-            scale=rng.uniform(0.5, 1.5),
+            scale=rng.uniform(2, 10),
             mass = 1.0,
         )
 
@@ -82,28 +85,38 @@ def generate_shapenet_objects(scene, num_objects=10):
     shapenet = kb.AssetSource.from_manifest(source_path)
     # randomly add objects from shapenet._assets.items() to the scene
     rng = np.random.default_rng()
-    for _ in range(num_objects):
+
+    i = num_objects
+    while i > 0:
         # Randomly select an asset from shapenet
         asset_id = rng.choice(list(shapenet._assets.keys()))
         obj = shapenet.create(asset_id=asset_id)
+
+        # get the category name of the selected asset
+        category_name = shapenet._assets[asset_id]["metadata"]["category"]
+        #if category_name in ["bookshelf", "rifle", "bottle", "bowl", "jar", "lamp", "display", "cap", "vessel", "bathtub", "table", "airplane", "car", "chair", "cellular telephone"]:
+        #    continue
+
         logging.info(f"selected '{asset_id}'")
 
         random_position = rng.uniform(-aoi_size, aoi_size, size=2)
         random_position = np.append(random_position, obj_initi_height)
         # make object flat on X/Y and not penetrate floor
-        obj.quaternion = kb.Quaternion(axis=[1, 0, 0], degrees=0)
+        obj.quaternion = kb.Quaternion(axis=[1, 0, 0], degrees=90)
         obj.position = random_position
 
         # set physics properties
         obj.friction = friction
         obj.restitution = restitution
+        obj.mass = 1.0
 
         obj.cast_shadows = False
 
         # set random scale 
-        obj.scale = rng.uniform(1., 5.0)
+        obj.scale = rng.uniform(8., 10.0)
 
         scene.add(obj)
+        i -= 1
 
 
 def render_scene_from_multiple_views(scene, renderer, camera_poses):
@@ -138,6 +151,7 @@ def render_scene_from_multiple_views(scene, renderer, camera_poses):
         depth_scale = kb.write_scaled_png(frames_dict['depth'][0], output_filenames['depth'])
         # save the depth without scaling as npy file
         np.save(f"output/associations/depth/{idx}.npy", frames_dict['depth'][0])
+        np.save(f"output/segmentations_gt/{idx}.npy", frames_dict['segmentation'][0])
         logging.info(f"View {idx}: Saved RGBA, depth, and segmentation with depth scale: {depth_scale}")
         
         # Save camera intrinsics and extrinsics
@@ -199,6 +213,7 @@ def generate_camera_poses(fov, tilting, front_overlap, side_overlap):
     return camera_poses
 
 if __name__ == "__main__":
+
     # --- Create scene and attach a renderer and simulator
     scene = kb.Scene(resolution=(image_size, image_size))
     scene.frame_end = 24*simulation_time   # Number of frames to simulate
@@ -263,4 +278,3 @@ if __name__ == "__main__":
     logging.info(f"Generated {len(camera_poses)} camera poses")
 
     render_scene_from_multiple_views(scene, renderer, camera_poses)
-
