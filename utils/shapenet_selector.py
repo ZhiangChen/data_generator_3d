@@ -79,6 +79,10 @@ def render_depth_image(scene, renderer, asset_id):
         # Save the depth image as PNG for this view
         depth_image_path_png = f"output/shapenet_depth/{asset_id}_{view_name}_depth_image.png"
         kb.write_scaled_png(depth_image, depth_image_path_png)
+
+        # write rgba using kb.write_png(frames_dict['rgba'][0], output_filenames['rgba'])
+        kb.write_png(frames_dict['rgba'][0], f"output/shapenet_depth/{asset_id}_{view_name}_rgba_image.png")
+
         
         logging.info(f"Saved depth image for view '{view_name}' to '{depth_image_path_png}'")
 
@@ -120,7 +124,7 @@ def find_shapenet_objects_with_limited_depth(scene, renderer, shapenet, num_obje
     return found_objects
 
 if __name__ == "__main__":
-    select_data = False
+    select_data = True
     if select_data:
         # --- Create scene and attach a renderer and simulator
         scene = kb.Scene(resolution=(image_size, image_size))

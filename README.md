@@ -68,3 +68,26 @@ Rendering multiple camera photos from a lawnmower sweep pattern to simulate UAV 
 - front overlap
 - side overlap
 - tilting angle
+
+## Shapenet depth rendering issue
+When an object from the Shapenet has transparent materials or thin, pointed parts, Kubric has a problem of rendering depth images, resulted in very large values. I did not fix this problem in Kubric. Instead, I create a script to select those objects without the depth rendering issue. 
+
+a. Select valid shapenet objects:
+```
+docker run --rm --interactive \
+           --user $(id -u):$(id -g) \
+           --volume "$(pwd):/kubric" \
+           kubricdockerhub/kubruntu \
+           /usr/bin/python3 data_generator_3d/utils/shapenet_selector.py
+```
+
+b. Visualize selecte shapenet objects:
+```
+docker run --rm --interactive \
+           --user $(id -u):$(id -g) \
+           --volume "$(pwd):/kubric" \
+           kubricdockerhub/kubruntu \
+           /usr/bin/python3 data_generator_3d/utils/visualize_shapenet.py
+```
+
+The repository includes a list of pre-selected shapenet objects in `selected_shapenet_objects.txt`. 

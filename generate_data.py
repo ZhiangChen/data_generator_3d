@@ -81,21 +81,26 @@ def generate_basic_objects(scene, num_objects=10):
         scene += obj
 
 def generate_shapenet_objects(scene, num_objects=10):
+    # logging generating shapenet objects
+    logging.info(f"Generating {num_objects} shapenet objects")
     source_path = "gs://kubric-unlisted/assets/ShapeNetCore.v2.json" 
     shapenet = kb.AssetSource.from_manifest(source_path)
+
+    selected_objects_file = "data_generator_3d/selected_shapenet_objects.txt"
+    with open(selected_objects_file, "r") as f:
+        selected_objects = f.readlines()
+
+    # remove the newline character from the selected_objects list
+    selected_objects = [obj.strip() for obj in selected_objects]
+
     # randomly add objects from shapenet._assets.items() to the scene
     rng = np.random.default_rng()
 
     i = num_objects
     while i > 0:
-        # Randomly select an asset from shapenet
-        asset_id = rng.choice(list(shapenet._assets.keys()))
+        # Randomly select an asset from the selected_objects list
+        asset_id = rng.choice(selected_objects)
         obj = shapenet.create(asset_id=asset_id)
-
-        # get the category name of the selected asset
-        category_name = shapenet._assets[asset_id]["metadata"]["category"]
-        #if category_name in ["bookshelf", "rifle", "bottle", "bowl", "jar", "lamp", "display", "cap", "vessel", "bathtub", "table", "airplane", "car", "chair", "cellular telephone"]:
-        #    continue
 
         logging.info(f"selected '{asset_id}'")
 
@@ -122,6 +127,7 @@ def generate_shapenet_objects(scene, num_objects=10):
 def render_scene_from_multiple_views(scene, renderer, camera_poses):
     """Render the scene from different camera perspectives."""
     cameras = dict()
+    invalid_depth_cameras = []
     for idx, cam_pos in enumerate(camera_poses):
         cam_position = cam_pos[:3]
         cam_tilting = cam_pos[3]
@@ -153,6 +159,10 @@ def render_scene_from_multiple_views(scene, renderer, camera_poses):
         np.save(f"output/associations/depth/{idx}.npy", frames_dict['depth'][0])
         np.save(f"output/segmentations_gt/{idx}.npy", frames_dict['segmentation'][0])
         logging.info(f"View {idx}: Saved RGBA, depth, and segmentation with depth scale: {depth_scale}")
+
+        if depth_scale['max'] > 1000:
+            invalid_depth_cameras.append(idx)
+
         
         # Save camera intrinsics and extrinsics
         camera_intrinsics = scene.camera.intrinsics.copy()
@@ -176,6 +186,7 @@ def render_scene_from_multiple_views(scene, renderer, camera_poses):
 
     # Save the camera parameters as npy
     np.save("output/reconstructions/camera_poses.npy", cameras)
+    print(invalid_depth_cameras)
 
 def generate_camera_poses(fov, tilting, front_overlap, side_overlap):
     """
