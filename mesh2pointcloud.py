@@ -2,52 +2,54 @@ import os
 import open3d as o3d
 import laspy
 import numpy as np
+from joblib import Parallel, delayed
 
-def ply_to_las(ply_directory, output_las_file):
-    all_points = []
-    all_ids = []
+def process_ply_file(file_name, ply_directory, id):
+    # Load the PLY file
+    ply_path = os.path.join(ply_directory, file_name)
+    # Load the mesh from the file
+    mesh = o3d.io.read_triangle_mesh(ply_path)
+    # Get the bounding box of the mesh
+    bbox = mesh.get_axis_aligned_bounding_box()
+    # Calculate the volume of the bounding box
+    volume = bbox.volume()
+    # Sampling points based on the volume of the bounding box
+    n_points = int(volume * 20)
 
+    if n_points < 500:
+        n_points = 500
+    elif n_points > 600000:
+        n_points = 1500000
+
+    print(f"Sampling {n_points} points from {file_name}")
+    pcd = mesh.sample_points_poisson_disk(n_points)
+    points = np.asarray(pcd.points)
+
+    # Create IDs for the points
+    ids = np.full((points.shape[0],), id)  # Correctly shape the ID array
+
+    return points, ids
+
+def ply_to_las_parallel(ply_directory, output_las_file, n_jobs=-1):
     ply_files = [f for f in os.listdir(ply_directory) if f.endswith('.ply')]
-    
 
-    # Loop through all the .ply files in the directory
-    for id, file_name in enumerate(ply_files):
-        # Load the PLY file
-        ply_path = os.path.join(ply_directory, file_name)
-        # Load the mesh from the file
-        mesh = o3d.io.read_triangle_mesh(ply_path)
-        # get the bounding box of the mesh
-        bbox = mesh.get_axis_aligned_bounding_box()
-        # calculate the volume of the bounding box
-        volume = bbox.volume()
-        # sampling points is linear to the volume of the bounding box
-        n_points = int(volume * 1000)
+    # Use joblib to parallelize the process
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process_ply_file)(file_name, ply_directory, id) for id, file_name in enumerate(ply_files)
+    )
 
-        if n_points < 1000:
-            n_points = 1000
-        elif n_points > 50000:
-            n_points = 50000
-        
-        print(f"Sampling {n_points} points from {file_name}")
-        pcd = mesh.sample_points_poisson_disk(n_points)
-        points = np.asarray(pcd.points)
-        
-        # Append points to the global list
-        all_points.append(points)
-
-        # Append repeated ids
-        ids = np.full((points.shape[0],), id)  # Correctly shape the ID array
-        all_ids.append(ids)
-
-
+    # Separate the results into points and ids
+    all_points, all_ids = zip(*results)
 
     # Combine all points into a single array
     all_points = np.vstack(all_points)
+    all_ids = np.hstack(all_ids)
+
     print(f"Total number of points in combined cloud: {all_points.shape[0]}")
 
     # Create a .las file and write the combined points to it
     header = laspy.LasHeader(point_format=3, version="1.2")
-    header.offsets = np.min(all_points, axis=0)
+    #header.offsets = np.min(all_points, axis=0)
     header.scales = np.array([0.001, 0.001, 0.001])  # Example scale
 
     las = laspy.LasData(header)
@@ -56,7 +58,6 @@ def ply_to_las(ply_directory, output_las_file):
     las.z = all_points[:, 2]
 
     # Add ids as intensity
-    all_ids = np.hstack(all_ids)
     las.intensity = all_ids
 
     # Write the points to the output .las file
@@ -65,5 +66,5 @@ def ply_to_las(ply_directory, output_las_file):
 
 # Usage
 ply_directory = "output/object_meshes"  # Path where your .ply files are stored
-output_las_file = "output/combined_point_cloud.las"  # Output .las file
-ply_to_las(ply_directory, output_las_file)
+output_las_file = "output/reconstructions/combined_point_cloud.las"  # Output .las file
+ply_to_las_parallel(ply_directory, output_las_file, n_jobs=6)

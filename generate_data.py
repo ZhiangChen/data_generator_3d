@@ -16,12 +16,42 @@ restitution = 0.01  # Restitution coefficient
 basic_objects = 100 # Number of basic objects
 shapenet_objects = 100 # Number of shapenet objects
 
-floor_size = 400  # Size of the floor in meters
+floor_size = 200  # Size of the floor in meters
 aoi_size = 100  # Area of interest size in meters
 camera_height = 30  # Camera height in meters
 obj_initi_height = 12.0  # Initial object height in meters
-camera_tilting = 10 # Camera tilting angle in degrees
+camera_tilting = 30 # Camera tilting angle in degrees
 
+front_overlap = 0.7  # Front overlap ratio
+side_overlap = 0.7  # Side overlap ratio
+
+
+def compute_z_depth_image(D, K):
+    # Extract camera intrinsic parameters
+    f_x = K[0, 0]
+    f_y = K[1, 1]
+    c_x = K[0, 2]
+    c_y = K[1, 2]
+    
+    # Get image dimensions
+    height, width = D.shape
+    
+    # Create meshgrid of pixel coordinates
+    u = np.arange(width)
+    v = np.arange(height)
+    uu, vv = np.meshgrid(u, v)
+    
+    # Compute normalized image coordinates
+    x = (uu - c_x) / f_x
+    y = (vv - c_y) / f_y
+    
+    # Compute the scaling factor
+    s = np.sqrt(x**2 + y**2 + 1)
+    
+    # Compute Z depth image
+    Z = D / s
+    
+    return Z
 
 def generate_basic_objects(scene, num_objects=10):
     # --- Load asset files
@@ -57,7 +87,7 @@ def generate_basic_objects(scene, num_objects=10):
             simulation_filename=simulation_filename,  # Set to None to use default collision shape
             position=random_position,
             quaternion=kb.random_rotation(rng=rng),
-            scale=rng.uniform(2, 10),
+            scale=rng.uniform(2, 6),
             mass = 1.0,
         )
 
@@ -118,7 +148,7 @@ def generate_shapenet_objects(scene, num_objects=10):
         obj.cast_shadows = False
 
         # set random scale 
-        obj.scale = rng.uniform(8., 10.0)
+        obj.scale = rng.uniform(10., 12.0)
 
         scene.add(obj)
         i -= 1
@@ -156,18 +186,28 @@ def render_scene_from_multiple_views(scene, renderer, camera_poses):
         kb.write_palette_png(frames_dict['segmentation'][0], output_filenames['segmentation'])
         depth_scale = kb.write_scaled_png(frames_dict['depth'][0], output_filenames['depth'])
         # save the depth without scaling as npy file
-        np.save(f"output/associations/depth/{idx}.npy", frames_dict['depth'][0])
-        np.save(f"output/segmentations_gt/{idx}.npy", frames_dict['segmentation'][0])
-        logging.info(f"View {idx}: Saved RGBA, depth, and segmentation with depth scale: {depth_scale}")
-
+        depth = frames_dict['depth'][0]
+        segmentation = frames_dict['segmentation'][0]
+        depth = np.squeeze(depth, axis=2)
+        segmentation = np.squeeze(segmentation, axis=2)
+        
         if depth_scale['max'] > 1000:
             invalid_depth_cameras.append(idx)
 
-        
         # Save camera intrinsics and extrinsics
         camera_intrinsics = scene.camera.intrinsics.copy()
+        # convert normalized intrinsics to pixel intrinsics
+        camera_intrinsics = camera_intrinsics * image_size
+        camera_intrinsics[2, 2] = 1
+        # all elements in the camera_intrinsics should be positive
+        camera_intrinsics = np.abs(camera_intrinsics)
+
         camera_position = scene.camera.position.copy()
         camera_rotation_matrix = scene.camera.rotation_matrix.copy()
+        # rotation matrix should be rotated 90 degrees around x-axis
+        R = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+        camera_rotation_matrix = np.matmul(camera_rotation_matrix, R)
+
         # get camera transformation matrix from camera position and rotation matrix
         camera_transformation_matrix = np.eye(4)
         camera_transformation_matrix[:3, :3] = camera_rotation_matrix
@@ -183,6 +223,16 @@ def render_scene_from_multiple_views(scene, renderer, camera_poses):
 
         image_key = f"{idx}.png"
         cameras[image_key] = camera
+
+        depth = compute_z_depth_image(depth, camera_intrinsics)
+
+        np.save(f"output/associations/depth/{idx}.npy", depth)
+        classes = np.unique(segmentation)
+        segmentation = np.digitize(segmentation, classes) - 1
+        np.save(f"output/segmentations_gt/{idx}.npy", segmentation)
+        
+        logging.info(f"View {idx}: Saved RGBA, depth, and segmentation with depth scale: {depth_scale}")
+
 
     # Save the camera parameters as npy
     np.save("output/reconstructions/camera_poses.npy", cameras)
@@ -200,7 +250,7 @@ def generate_camera_poses(fov, tilting, front_overlap, side_overlap):
     """
     short_distance = camera_height / np.cos(np.radians(tilting))
     swath = short_distance * np.tan(fov / 2) * 2
-    forward_coverage = camera_height * (np.tan(np.radians(tilting)+fov) - np.tan(np.radians(tilting)))
+    forward_coverage = camera_height * (np.tan(np.radians(tilting)+fov/2) - np.tan(np.radians(tilting)-fov/2))
     
     side_step_length = swath * (1 - side_overlap)
     front_step_length = forward_coverage * (1 - front_overlap)
@@ -266,6 +316,8 @@ if __name__ == "__main__":
     )
 
 
+    fov = scene.camera.field_of_view
+
     # Generate basic objects
     generate_basic_objects(scene, num_objects=basic_objects)
 
@@ -283,7 +335,7 @@ if __name__ == "__main__":
 
     fov = scene.camera.field_of_view
 
-    camera_poses = generate_camera_poses(fov, tilting=camera_tilting, front_overlap=0.85, side_overlap=0.65)
+    camera_poses = generate_camera_poses(fov, tilting=camera_tilting, front_overlap=front_overlap, side_overlap=side_overlap)
 
     # print out the generated camera poses number
     logging.info(f"Generated {len(camera_poses)} camera poses")
