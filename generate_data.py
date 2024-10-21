@@ -25,6 +25,10 @@ camera_tilting = 30 # Camera tilting angle in degrees
 front_overlap = 0.7  # Front overlap ratio
 side_overlap = 0.7  # Side overlap ratio
 
+data_id = 0
+save_folder = f"output/kubric_{data_id}"
+
+shadow = False  # Enable/disable shadows
 
 def compute_z_depth_image(D, K):
     # Extract camera intrinsic parameters
@@ -53,7 +57,7 @@ def compute_z_depth_image(D, K):
     
     return Z
 
-def generate_basic_objects(scene, num_objects=10):
+def generate_basic_objects(scene, renderer, num_objects=10):
     # --- Load asset files
     assets_dir = "kubric_assets/KuBasic"
     asset_file_paths = []
@@ -110,7 +114,11 @@ def generate_basic_objects(scene, num_objects=10):
         # Add object to the scene
         scene += obj
 
-def generate_shapenet_objects(scene, num_objects=10):
+        if not shadow:
+            obj_blender = obj.linked_objects[renderer]
+            obj_blender.cycles_visibility.shadow = False
+
+def generate_shapenet_objects(scene, renderer, num_objects=10):
     # logging generating shapenet objects
     logging.info(f"Generating {num_objects} shapenet objects")
     source_path = "gs://kubric-unlisted/assets/ShapeNetCore.v2.json" 
@@ -153,6 +161,10 @@ def generate_shapenet_objects(scene, num_objects=10):
         scene.add(obj)
         i -= 1
 
+        if not shadow:
+            obj_blender = obj.linked_objects[renderer]
+            obj_blender.cycles_visibility.shadow = False
+
 
 def render_scene_from_multiple_views(scene, renderer, camera_poses):
     """Render the scene from different camera perspectives."""
@@ -170,16 +182,19 @@ def render_scene_from_multiple_views(scene, renderer, camera_poses):
         frames_dict = renderer.render()
 
         # Create output directories if it doesn't exist
-        os.makedirs("output/photos", exist_ok=True)
-        os.makedirs("output/reconstructions", exist_ok=True)
-        os.makedirs("output/associations/depth", exist_ok=True)
-        os.makedirs("output/segmentations_gt", exist_ok=True)
+        os.makedirs(os.path.join(save_folder, "photos"), exist_ok=True)
+        os.makedirs(os.path.join(save_folder, "reconstructions"), exist_ok=True)
+        os.makedirs(os.path.join(save_folder, "associations", "depth"), exist_ok=True)
+        os.makedirs(os.path.join(save_folder, "segmentations_gt"), exist_ok=True)
         
         # Save the outputs for this camera position
+        rgba_filename = os.path.join(save_folder, "photos", f"{idx}.png")
+        depth_filename = os.path.join(save_folder, "associations", "depth", f"{idx}.png")
+        segmentation_filename = os.path.join(save_folder, "segmentations_gt", f"{idx}.png")
         output_filenames = {
-            'rgba': f"output/photos/{idx}.png",
-            'depth': f"output/associations/depth/{idx}.png",
-            'segmentation': f"output/segmentations_gt/{idx}.png",
+            'rgba': rgba_filename,
+            'depth': depth_filename,
+            'segmentation': segmentation_filename,
         }
 
         kb.write_png(frames_dict['rgba'][0], output_filenames['rgba'])
@@ -226,16 +241,19 @@ def render_scene_from_multiple_views(scene, renderer, camera_poses):
 
         depth = compute_z_depth_image(depth, camera_intrinsics)
 
-        np.save(f"output/associations/depth/{idx}.npy", depth)
+        depth_npy = os.path.join(save_folder, "associations", "depth", f"{idx}.npy")
+        np.save(depth_npy, depth)
         classes = np.unique(segmentation)
         segmentation = np.digitize(segmentation, classes) - 1
-        np.save(f"output/segmentations_gt/{idx}.npy", segmentation)
+        segmentation_npy = os.path.join(save_folder, "segmentations_gt", f"{idx}.npy")
+        np.save(segmentation_npy, segmentation)
         
         logging.info(f"View {idx}: Saved RGBA, depth, and segmentation with depth scale: {depth_scale}")
 
 
     # Save the camera parameters as npy
-    np.save("output/reconstructions/camera_poses.npy", cameras)
+    camera_npy = os.path.join(save_folder, "reconstructions", "cameras.npy")
+    np.save(camera_npy, cameras)
     print(invalid_depth_cameras)
 
 def generate_camera_poses(fov, tilting, front_overlap, side_overlap):
@@ -274,6 +292,11 @@ def generate_camera_poses(fov, tilting, front_overlap, side_overlap):
     return camera_poses
 
 if __name__ == "__main__":
+    # read parameter from the command line
+    import sys
+    if len(sys.argv) > 1:
+        data_id = int(sys.argv[1])
+        save_folder = f"output/kubric_{data_id}"
 
     # --- Create scene and attach a renderer and simulator
     scene = kb.Scene(resolution=(image_size, image_size))
@@ -319,10 +342,10 @@ if __name__ == "__main__":
     fov = scene.camera.field_of_view
 
     # Generate basic objects
-    generate_basic_objects(scene, num_objects=basic_objects)
+    generate_basic_objects(scene, renderer, num_objects=basic_objects)
 
     # Generate shapenet objects
-    generate_shapenet_objects(scene, num_objects=shapenet_objects)
+    generate_shapenet_objects(scene, renderer, num_objects=shapenet_objects)
 
     # --- Run the simulation
     simulator.run()
@@ -330,8 +353,9 @@ if __name__ == "__main__":
     # --- Set the scene to render only the last frame
     scene.frame_start = scene.frame_end  # Render only the last frame
 
-    os.makedirs("output", exist_ok=True)
-    renderer.save_state("output/semantic_SfM.blend")
+    
+    os.makedirs(save_folder, exist_ok=True)
+    renderer.save_state(os.path.join(save_folder, "semantic_SfM.blend"))
 
     fov = scene.camera.field_of_view
 

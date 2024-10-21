@@ -64,7 +64,16 @@ def ply_to_las_parallel(ply_directory, output_las_file, n_jobs=-1):
     las.write(output_las_file)
     print(f"Saved combined point cloud to {output_las_file}")
 
-# Usage
-ply_directory = "output/object_meshes"  # Path where your .ply files are stored
-output_las_file = "output/reconstructions/combined_point_cloud.las"  # Output .las file
-ply_to_las_parallel(ply_directory, output_las_file, n_jobs=6)
+
+if __name__ == "__main__":
+    # read parameter from the command line
+    import sys
+    if len(sys.argv) > 1:
+        data_id = int(sys.argv[1])
+    else:
+        data_id = 0
+
+    print(f"Processing data with ID {data_id}")
+    ply_directory = f"output/kubric_{data_id}/object_meshes"  # Directory containing .ply files
+    output_las_file = f"output/kubric_{data_id}/reconstructions/combined_point_cloud.las"  # Output .las file
+    ply_to_las_parallel(ply_directory, output_las_file, n_jobs=6)

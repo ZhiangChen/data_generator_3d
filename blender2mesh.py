@@ -1,13 +1,19 @@
 import bpy
 import os
+import sys
 
 # Set the path where you want to export the meshes
-export_path = "output/object_meshes"
+data_id = 0
+if len(sys.argv) > 1:
+    data_id = int(sys.argv[1])
+
+export_path = f"output/kubric_{data_id}/object_meshes"
 if not os.path.exists(export_path):
     os.makedirs(export_path)
 
 # Load the Blender file generated from Kubric (replace with your actual file path)
-bpy.ops.wm.open_mainfile(filepath="output/semantic_SfM.blend")
+blender_file = f"output/kubric_{data_id}/semantic_SfM.blend"
+bpy.ops.wm.open_mainfile(filepath=blender_file)
 
 # Set the scene to the last frame
 scene = bpy.context.scene

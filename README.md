@@ -45,6 +45,11 @@ docker run --rm --interactive \
 python3 data_generator_3d/mesh2pointcloud.py
 ```
 
+4. Automatically generate datasets:
+```
+./data_generator_3d/auto_gen.bash
+```
+
 ## Features
 Mesh scene:  
 <img src="./docs/scene.png" alt="mesh" width="400"/>
