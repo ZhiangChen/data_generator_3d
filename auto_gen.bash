@@ -1,7 +1,8 @@
 #!/bin/bash
 
+
 # Loop over the range of parameters (0 to 9)
-for i in {64..127}
+for i in {0..129}
 do
   echo "Running with parameter: $i"
   

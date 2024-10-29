@@ -17,5 +17,5 @@ def exam_depth(data_id):
 
 
 if __name__ == "__main__":
-    for i in range(17, 64):
+    for i in range(119, 130):
         exam_depth(i)
